@@ -2,3 +2,5 @@ aiogram
 aiohttp
 python-dotenv
 g4f
+edge-tts
+ffmpeg-python

@@ -4,10 +4,12 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, BufferedInputFile
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.exceptions import TelegramBadRequest
 
 from config import BOT_TOKEN
 from logger import setup_logger
 import ai
+import voice
 
 log = setup_logger("main")
 logging.getLogger("aiogram").setLevel(logging.WARNING)
@@ -60,8 +62,25 @@ async def handle_message(message: Message):
     log.info(f"[user={message.from_user.id}] @{message.from_user.username}: «{message.text[:80]}{'...' if len(message.text) > 80 else ''}»")
     await bot.send_chat_action(message.chat.id, "typing")
     result = await ai.generate(message.from_user.id, message.text)
+
     if result:
-        await message.answer(result)
+        if voice.should_answer_with_voice():
+            log.info(f"[user={message.from_user.id}] режим ответа: голосовой")
+            await bot.send_chat_action(message.chat.id, "record_voice")
+            ogg = await voice.text_to_speech(result)
+            if ogg:
+                try:
+                    log.info(f"[user={message.from_user.id}] отправка голосового")
+                    await message.answer_voice(BufferedInputFile(ogg, filename="voice.ogg"))
+                except TelegramBadRequest as e:
+                    log.warning(f"[user={message.from_user.id}] голосовые запрещены пользователем, фолбек на текст: {e}")
+                    await message.answer(result)
+            else:
+                log.warning(f"[user={message.from_user.id}] голос не сгенерировался, фолбек на текст")
+                await message.answer(result)
+        else:
+            log.info(f"[user={message.from_user.id}] режим ответа: текст")
+            await message.answer(result)
     else:
         log.error(f"[user={message.from_user.id}] генерация провалилась")
         await message.answer("Блять, все модели сдохли. Попробуй ещё раз.")
